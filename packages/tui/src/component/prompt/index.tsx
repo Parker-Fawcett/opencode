@@ -1140,6 +1140,32 @@ export function Prompt(props: PromptProps) {
       return true
     }
     if (slash) {
+      if (slash.command.slash?.images) {
+        const captured = { ...store.prompt, files: store.prompt.files?.slice() }
+        const files = captured.files?.filter((file) => file.uri.startsWith("data:image/")) ?? []
+        try {
+          await slash.command.run(slash.input, undefined, files)
+        } catch {
+          return false
+        }
+        if (
+          disposed ||
+          store.prompt.text !== captured.text ||
+          store.prompt.files?.length !== captured.files?.length ||
+          captured.files?.some((file, index) => store.prompt.files?.[index] !== file)
+        )
+          return true
+        clearPrompt()
+        setStore("prompt", {
+          ...emptyPrompt(),
+          files: captured.files
+            ?.filter((file) => !files.includes(file))
+            .map((file) => ({ ...file, mention: undefined })),
+          agents: captured.agents?.map((agent) => ({ ...agent, mention: undefined })),
+          skills: captured.skills?.map((skill) => ({ ...skill, mention: undefined })),
+        })
+        return true
+      }
       clearPrompt()
       await slash.command.run(slash.input)
       return true

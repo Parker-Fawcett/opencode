@@ -238,6 +238,7 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
         title: item.title,
         description: item.description,
         arguments: item.slashArguments,
+        images: item.slashImages,
         type: "builtin" as const,
       })),
   ])
@@ -300,7 +301,10 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
 
       if (!selected) return
 
-      return () => command.trigger(selected.id, "slash", selected.input)
+      return {
+        images: selected.images,
+        run: (files) => command.trigger(selected.id, "slash", selected.input, files),
+      }
     },
   })
 

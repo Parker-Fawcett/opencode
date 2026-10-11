@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { sessionHref } from "../utils/app"
+import { provider, sessionHref } from "../utils/app"
 import { openSession } from "../utils/workspace"
 import { expectSessionTitle } from "../utils/waits"
 
@@ -66,16 +66,26 @@ test("keeps separate one-shot /btw answers and restores them after reload", asyn
   expect(prompts).toEqual([])
 })
 
-test("isolates concurrent side questions and makes an interrupted reload retryable", async ({ page }) => {
+test("isolates concurrent side questions and makes an interrupted reload retryable", async ({ page }, testInfo) => {
   const held = Promise.withResolvers<void>()
   const attempts: string[] = []
   const prompts: unknown[] = []
+  const images: string[][] = []
+
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeElEQVR4nO3PUQkAIBTAwBfHiLbXEH4cwmABbnP2+rrhgga0oAEtaEALGtCCBrSgAS1oQAsa0IIGtKABLWhACxrQgga0oAEtaEALGtCCBrSgAS1oQAsa0IIGtKABLWhACxrQgga0oAEtaEALGtCCBrSgAS1oQAseu01Q8Xia6FluAAAAAElFTkSuQmCC"
 
   const { editor } = await openSession(page, {
     name: "BtwConcurrent",
+    provider: provider({
+      id: "vision",
+      name: "Vision",
+      capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+    }),
     onPrompt: (input) => prompts.push(input),
     generate: async (input) => {
       attempts.push(input.prompt)
+      images.push(input.files?.map((file) => file.uri) ?? [])
 
       if (input.prompt.includes("slow question") && attempts.length === 1) {
         await held.promise
@@ -88,9 +98,15 @@ test("isolates concurrent side questions and makes an interrupted reload retryab
   })
 
   const panel = page.locator('[data-slot="session-btw-panel"]')
+  await expect(page.getByRole("button", { name: "Vision", exact: true })).toBeVisible()
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "diagram.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") })
+  await expect(page.getByRole("img", { name: "diagram.png", exact: true })).toBeVisible()
   await editor.fill("/btw slow question")
   await editor.press("Enter")
   await expect(panel.getByRole("status")).toContainText("Working")
+  await expect(page.getByRole("img", { name: "diagram.png", exact: true })).toHaveCount(0)
   await editor.fill("/btw fast question")
   await editor.press("Enter")
   await expect(panel.getByText("Fast answer", { exact: true })).toBeVisible()
@@ -105,6 +121,8 @@ test("isolates concurrent side questions and makes an interrupted reload retryab
   await panel.getByRole("button", { name: "Retry", exact: true }).click()
   await expect(panel.getByText("Retried answer", { exact: true })).toBeVisible()
   expect(attempts).toHaveLength(3)
+  expect(images).toEqual([[`data:image/png;base64,${png}`], [], [`data:image/png;base64,${png}`]])
+  await page.screenshot({ path: testInfo.outputPath("retried-image.png") })
   expect(attempts[2]).toContain("slow question")
   expect(attempts[2]).not.toContain("fast question")
   held.resolve()

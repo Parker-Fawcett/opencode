@@ -1,8 +1,8 @@
-import { batch, onCleanup } from "solid-js"
+import { onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { showToast } from "@opencode/ui/toast"
 import type { MountedSession, SetupContext } from "../sdk"
 import type Btw from "./index"
+import type { PromptInput } from "@opencode/schema/prompt-input"
 
 const instructions = [
   "The user is asking a quick side question about the conversation so far.",
@@ -29,8 +29,7 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
   const entry = (session: MountedSession, id: string) => saved(session).value?.chats.find((item) => item.id === id)
   const pending = (id: string) => requests.pending.includes(id)
 
-  // Takes the question rather than reading it back, because a new chat's write may still wait for the store to load.
-  const generate = (session: MountedSession, id: string, question: string) => {
+  const generate = (session: MountedSession, id: string, question: string, files?: PromptInput.Prompt["files"]) => {
     if (pending(id)) return
 
     const store = saved(session)
@@ -41,7 +40,7 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
     return (
       session.server.client.session
         .generate(
-          { sessionID: session.id, prompt: [instructions, question].join("\n\n") },
+          { sessionID: session.id, prompt: [instructions, question].join("\n\n"), files },
           { signal: controller.signal },
         )
         .then((result) => {
@@ -60,14 +59,10 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
     )
   }
 
-  const ask = (value?: string) => {
+  const ask = async (value?: string, files?: PromptInput.Prompt["files"]) => {
     const question = value?.trim()
 
-    if (!question) {
-      showToast({ title: ctx.t("question.required") })
-
-      return
-    }
+    if (!question) throw new Error(ctx.t("question.required"))
 
     const session = ctx.sessions.current()
 
@@ -75,16 +70,15 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
 
     const id = crypto.randomUUID()
 
-    // Desktop storage loads asynchronously. A write before load queues and lands in the same batch that marks the
-    // store ready, and the panel keeps a tab hidden until then, so the chat and its tab need not wait. The session's
-    // store lives while its tab stays open, so leaving the session first still records the chat.
-    batch(() => {
-      saved(session).update((draft) => {
-        draft.chats.push({ id, question })
-      })
-      ctx.layout.open(`${ctx.id}:${id}`, session, { tab: "select" })
+    // Persist the captured files before the composer consumes them, so failed requests and reloads remain retryable.
+    await saved(session).update((draft) => {
+      draft.chats.push({ id, question, files: files?.slice() })
     })
-    void generate(session, id, question)
+
+    if (ctx.signal.aborted) return
+
+    ctx.layout.open(`${ctx.id}:${id}`, session, { tab: "select" })
+    void generate(session, id, question, files)
   }
 
   return {
@@ -99,9 +93,9 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
       return !!item && item.answer === undefined && !pending(id)
     },
     retry: (session: MountedSession, id: string) => {
-      const question = entry(session, id)?.question
+      const chat = entry(session, id)
 
-      if (question) void generate(session, id, question)
+      if (chat) void generate(session, id, chat.question, chat.files)
     },
     /** Closing a tab forgets its question and answer. */
     remove: (session: MountedSession, id: string) => {

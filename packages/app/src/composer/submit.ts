@@ -1,4 +1,5 @@
 import { SessionMessage } from "@opencode/schema/session-message"
+import type { PromptInput } from "@opencode/schema/prompt-input"
 import type { SessionMessageUser } from "@opencode/client/promise"
 import type { Accessor } from "solid-js"
 import type { PromptComment } from "./comment-note"
@@ -39,7 +40,12 @@ type ComposerSubmitInput = {
   setMode: (mode: "normal" | "shell") => void
   closePopover: () => void
   delivery?: (alternate: boolean) => ComposerDelivery
-  clientCommand?: (text: string) => (() => void | Promise<void>) | undefined
+  clientCommand?: (text: string) =>
+    | {
+        images?: boolean
+        run: (files?: PromptInput.Prompt["files"]) => void | Promise<void>
+      }
+    | undefined
   notify: {
     missingSelection: () => void
     unqueueable: () => void
@@ -64,6 +70,7 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
     if (clientCommand) {
       if (submitting.has(input.adapter.state)) return
       submitting.add(input.adapter.state)
+      const current = input.adapter.state.current()
 
       try {
         // Client commands such as /btw answer with the session's model, so apply the composer's selection first,
@@ -76,8 +83,33 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
             selection,
             input.adapter.controls().model.selection.trackSessionCommit,
           )
-        clearClientCommand(input, prompt)
-        await clientCommand()
+
+        const files = clientCommand.images
+          ? await Promise.all(
+              prompt
+                .filter((part) => part.type === "image")
+                .map(async (image) => ({
+                  uri: await blobDataUrl(image.blob, image.mime),
+                  name: image.filename,
+                })),
+            )
+          : undefined
+
+        await clientCommand.run(files)
+
+        if (input.adapter.state.current() === current) {
+          clearClientCommand(input, prompt, clientCommand.images)
+
+          return
+        }
+
+        if (clientCommand.images) {
+          const submitted = new Set(prompt.flatMap((part) => (part.type === "image" ? [part.id] : [])))
+
+          input.adapter.state.set(
+            input.adapter.state.current().filter((part) => part.type !== "image" || !submitted.has(part.id)),
+          )
+        }
       } catch (error) {
         input.notify.failed("command", error)
       } finally {
@@ -216,8 +248,14 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
   }
 }
 
-function clearClientCommand(input: ComposerSubmitInput, prompt: Prompt) {
-  input.adapter.state.set([{ type: "text", content: "", start: 0, end: 0 }, ...prompt.filter(isAttachment)], 0)
+function clearClientCommand(input: ComposerSubmitInput, prompt: Prompt, images?: boolean) {
+  input.adapter.state.set(
+    [
+      { type: "text", content: "", start: 0, end: 0 },
+      ...prompt.filter((part) => isAttachment(part) && (!images || part.type !== "image")),
+    ],
+    0,
+  )
   input.adapter.state.mode.set("normal")
   input.setMode("normal")
   input.closePopover()

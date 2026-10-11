@@ -344,7 +344,9 @@ function useCommands(): Accessor<readonly KeymapCommand[]> {
         }
         return {
           ...command,
-          run: (input?: string) => {
+          run: (input?: string, event?: KeyEvent, files?: Parameters<KeymapCommand["run"]>[2]) => {
+            // Attachment submissions await the owning handler before consuming the captured draft.
+            if (files !== undefined && entry.command.opencode) return entry.command.opencode.run(input, event, files)
             value.dispatch(entry.command.name, input)
           },
         }
