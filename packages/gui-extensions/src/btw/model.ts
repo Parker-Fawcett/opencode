@@ -1,4 +1,4 @@
-import { onCleanup } from "solid-js"
+import { batch, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { MountedSession, SetupContext } from "../sdk"
 import type Btw from "./index"
@@ -33,6 +33,7 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
   const entry = (session: MountedSession, id: string) => saved(session).value?.chats.find((item) => item.id === id)
   const pending = (id: string) => requests.pending.includes(id)
 
+  // Takes the question rather than reading it back, because a new chat's write may still wait for the store to load.
   const generate = (session: MountedSession, id: string, question: string, files?: PromptInput.Prompt["files"]) => {
     if (pending(id)) return
 
@@ -63,7 +64,7 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
     )
   }
 
-  const ask = async (value?: string, files?: PromptInput.Prompt["files"]) => {
+  const ask = (value?: string, files?: PromptInput.Prompt["files"]) => {
     const question = value?.trim()
 
     if (!question) throw new Error(ctx.t("question.required"))
@@ -75,15 +76,17 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
     const id = crypto.randomUUID()
 
     // Image data stays in memory: browser session stores have a much smaller quota than attachments.
-    await saved(session).update((draft) => {
-      draft.chats.push({ id, question })
-    })
-
-    if (ctx.signal.aborted) return
-
     if (files?.length) attachments.set(id, files.slice())
 
-    ctx.layout.open(`${ctx.id}:${id}`, session, { tab: "select" })
+    // Desktop storage loads asynchronously. A write before load queues and lands in the same batch that marks the
+    // store ready, and the panel keeps a tab hidden until then, so the chat and its tab need not wait. The session's
+    // store lives while its tab stays open, so leaving the session first still records the chat.
+    batch(() => {
+      saved(session).update((draft) => {
+        draft.chats.push({ id, question })
+      })
+      ctx.layout.open(`${ctx.id}:${id}`, session, { tab: "select" })
+    })
     void generate(session, id, question, files)
   }
 
@@ -99,9 +102,9 @@ export function createBtw(ctx: SetupContext<typeof Btw>) {
       return !!item && item.answer === undefined && !pending(id)
     },
     retry: (session: MountedSession, id: string) => {
-      const chat = entry(session, id)
+      const question = entry(session, id)?.question
 
-      if (chat) void generate(session, id, chat.question, attachments.get(id))
+      if (question) void generate(session, id, question, attachments.get(id))
     },
     /** Closing a tab forgets its question and answer. */
     remove: (session: MountedSession, id: string) => {

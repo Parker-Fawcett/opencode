@@ -171,62 +171,51 @@ function session(input: {
 }
 
 describe("Composer submission", () => {
-  test.each([false, true])("captures client command images and retains failed drafts (failure=%s)", async (failure) => {
-    const state = createMemoryComposerState().capture()
+  test.each(["accepted", "failed", "followup"] as const)(
+    "captures client command images and handles %s drafts",
+    async (mode) => {
+      const state = createMemoryComposerState().capture()
 
-    const image = {
-      type: "image" as const,
-      id: "image",
-      filename: "diagram.png",
-      mime: "image/png",
-      blob: { id: "image", url: "data:image/png;base64,YQ==" },
-    }
+      const image = {
+        type: "image" as const,
+        id: "image",
+        filename: "diagram.png",
+        mime: "image/png",
+        blob: { id: "image", url: "data:image/png;base64,YQ==" },
+      }
 
-    const prompt: Prompt = [{ type: "text", content: "/btw explain", start: 0, end: 12 }, image]
+      const prompt: Prompt = [{ type: "text", content: "/btw explain", start: 0, end: 12 }, image]
 
-    state.set(prompt)
-    state.context.add({ type: "file", path: "unrelated.ts" })
-    const calls: string[] = []
-    let received: unknown
-    await submitInput(active(state, session({ calls })), undefined, "normal", undefined, [], () => ({
-      images: true,
-      run: async (files) => {
-        received = files
+      const followup: Prompt = [
+        { type: "text", content: "next question", start: 0, end: 13 },
+        { ...image, id: "next" },
+      ]
 
-        if (failure) throw new Error("Rejected")
-      },
-    })).submit(new Event("submit"))
-    expect(received).toEqual([{ uri: image.blob.url, name: image.filename }])
-    expect(state.current()).toEqual(failure ? prompt : [{ type: "text", content: "", start: 0, end: 0 }])
-    expect(state.context.items()).toHaveLength(1)
-  })
+      state.set(prompt)
+      state.context.add({ type: "file", path: "unrelated.ts" })
+      let received: unknown
+      await submitInput(active(state, session({ calls: [] })), undefined, "normal", undefined, [], () => ({
+        images: true,
+        run: (files) => {
+          received = files
 
-  test("does not clear a follow-up draft while a client command is accepting its captured images", async () => {
-    const state = createMemoryComposerState().capture()
+          if (mode === "failed") throw new Error("Rejected")
 
-    const image = {
-      type: "image" as const,
-      id: "image",
-      filename: "diagram.png",
-      mime: "image/png",
-      blob: { id: "image", url: "data:image/png;base64,YQ==" },
-    }
+          if (mode === "followup") state.set([...followup, image])
+        },
+      })).submit(new Event("submit"))
 
-    state.set([{ type: "text", content: "/btw explain", start: 0, end: 12 }, image])
+      const expected = {
+        accepted: [{ type: "text" as const, content: "", start: 0, end: 0 }],
+        failed: prompt,
+        followup,
+      }
 
-    const followup: Prompt = [
-      { type: "text", content: "next question", start: 0, end: 13 },
-      { ...image, id: "next" },
-    ]
-
-    await submitInput(active(state, session({ calls: [] })), undefined, "normal", undefined, [], () => ({
-      images: true,
-      run: () => {
-        state.set([...followup, image])
-      },
-    })).submit(new Event("submit"))
-    expect(state.current()).toEqual(followup)
-  })
+      expect(received).toEqual([{ uri: image.blob.url, name: image.filename }])
+      expect(state.current()).toEqual(expected[mode])
+      expect(state.context.items()).toHaveLength(1)
+    },
+  )
 
   test("applies the selection and runs a client argument command without admitting it to the session", async () => {
     const state = createMemoryComposerState().capture()

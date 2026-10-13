@@ -367,10 +367,10 @@ it.effect(
         requests[0].messages
           .filter((message) => message.role === "user")
           .map((message) => message.content.filter((part) => part.type === "media")),
-      ).toEqual([
-        [
+      ).toEqual(
+        ["context.gif", "fresh.gif"].map((filename) => [
           expect.objectContaining({
-            filename: "context.gif",
+            filename,
             media: expect.objectContaining({
               mediaType: "image/gif",
               source: {
@@ -380,21 +380,8 @@ it.effect(
               },
             }),
           }),
-        ],
-        [
-          expect.objectContaining({
-            filename: "fresh.gif",
-            media: expect.objectContaining({
-              mediaType: "image/gif",
-              source: {
-                type: "base64",
-                mediaType: "image/gif",
-                data: "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-              },
-            }),
-          }),
-        ],
-      ])
+        ]),
+      )
       expect(
         requests[0]?.messages.flatMap((message) =>
           message.role === "assistant"

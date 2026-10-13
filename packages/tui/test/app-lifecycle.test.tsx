@@ -40,11 +40,7 @@ test.each(["answer", "restore", "followup"])(
             },
           })
         if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
-        if (
-          url.pathname === `/api/session/${sessionID}/inbox` ||
-          url.pathname === `/api/session/${sessionID}/permission`
-        )
-          return json({ data: [] })
+        if (url.pathname === `/api/session/${sessionID}/inbox`) return json({ data: [] })
         if (url.pathname === `/api/session/${sessionID}/generate`) {
           requested.resolve(await request.json())
           return response.promise
