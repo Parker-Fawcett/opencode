@@ -34,8 +34,6 @@ import { createSessionRequestModel } from "../requests/model"
 import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
 
-const metaChordGraceMs = 100
-
 export function createActiveSessionRegion(input: {
   session: SessionModel
   screen: SessionScreenLayout
@@ -56,8 +54,6 @@ export function createActiveSessionRegion(input: {
   const state = createSessionRequestModel()
   const controls = createComposerControls()
   let promptRef: HTMLDivElement | undefined
-  let lastMetaAt = 0
-  let lastPasteFocusAt = 0
 
   createEffect(
     on(
@@ -137,36 +133,23 @@ export function createActiveSessionRegion(input: {
     return current instanceof HTMLElement ? current : undefined
   }
 
+  const shouldIgnoreAutoFocus = (
+    path: EventTarget[],
+    target: HTMLElement | undefined,
+    current: HTMLElement | undefined,
+  ) =>
+    path.some((item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null) ||
+    editable(target) ||
+    Boolean(current && (current.closest("[data-prevent-autofocus]") || editable(current))) ||
+    Boolean(dialog.active)
+
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Meta" || event.metaKey) lastMetaAt = Date.now()
-
     if (event.defaultPrevented) return
-
-    if (
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      event.key.toLowerCase() === "v" &&
-      Date.now() - lastPasteFocusAt < metaChordGraceMs
-    ) {
-      lastPasteFocusAt = 0
-      event.preventDefault()
-
-      return
-    }
-
     const path = event.composedPath()
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
-    const active = activeElement()
+    const current = activeElement()
 
-    if (
-      path.some((item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null) ||
-      editable(target) ||
-      (active && (active.closest("[data-prevent-autofocus]") || editable(active))) ||
-      dialog.active
-    ) {
-      return
-    }
+    if (shouldIgnoreAutoFocus(path, target, current)) return
 
     if (event.key === "Escape" && input.session.data.isChild()) {
       event.preventDefault()
@@ -175,7 +158,7 @@ export function createActiveSessionRegion(input: {
       return
     }
 
-    if (active === promptRef) {
+    if (current === promptRef) {
       if (event.key === "Escape") promptRef?.blur()
 
       return
@@ -194,43 +177,25 @@ export function createActiveSessionRegion(input: {
       return
     }
 
-    if (
-      event.key.length !== 1 ||
-      event.key === "Unidentified" ||
-      event.ctrlKey ||
-      event.metaKey ||
-      Date.now() - lastMetaAt < metaChordGraceMs
-    ) {
-      return
-    }
+    if (event.key.length !== 1 || event.key === "Unidentified" || event.ctrlKey || event.metaKey) return
 
     if (state.blocked() || input.session.data.isChild() || !promptRef) return
     promptRef.focus()
     setCursorPosition(promptRef, prompt.cursor() ?? promptLength(prompt.current()))
   }
 
-  const handleKeyUp = (event: KeyboardEvent) => {
-    if (event.key === "Meta" || event.metaKey) lastMetaAt = Date.now()
-  }
-
   const handlePaste = (event: ClipboardEvent) => {
     if (event.defaultPrevented) return
     const path = event.composedPath()
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
-    const active = activeElement()
 
-    if (
-      path.some((item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null) ||
-      editable(target) ||
-      (active && (active.closest("[data-prevent-autofocus]") || editable(active))) ||
-      dialog.active
-    ) {
-      return
-    }
+    if (shouldIgnoreAutoFocus(path, target, activeElement())) return
+    const controller = active()
 
     if (
       state.blocked() ||
       input.session.data.isChild() ||
+      !controller ||
       !promptRef ||
       !promptRef.isConnected ||
       !promptRef.isContentEditable
@@ -238,30 +203,13 @@ export function createActiveSessionRegion(input: {
       return
     }
 
-    const now = Date.now()
-    lastMetaAt = now
-    lastPasteFocusAt = now
     promptRef.focus()
     setCursorPosition(promptRef, prompt.cursor() ?? promptLength(prompt.current()))
-
-    const forwarded = new ClipboardEvent("paste", {
-      bubbles: true,
-      cancelable: true,
-      clipboardData: event.clipboardData instanceof DataTransfer ? event.clipboardData : undefined,
-    })
-
-    if (forwarded.clipboardData !== event.clipboardData) {
-      Object.defineProperty(forwarded, "clipboardData", { value: event.clipboardData })
-    }
-
-    promptRef.dispatchEvent(forwarded)
-
-    if (forwarded.defaultPrevented) event.preventDefault()
+    controller.composer.onPaste(event)
   }
 
   onMount(() => {
     makeEventListener(document, "keydown", handleKeyDown)
-    makeEventListener(document, "keyup", handleKeyUp)
     makeEventListener(document, "paste", handlePaste)
   })
 

@@ -75,19 +75,7 @@ test("routes typing to the composer unless the open terminal is focused", async 
   await expect(terminal).toHaveCSS("opacity", "1")
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Meta", metaKey: true, bubbles: true, cancelable: true }))
-    document.dispatchEvent(new KeyboardEvent("keyup", { key: "Meta", metaKey: false, bubbles: true, cancelable: true }))
-    const stray = new KeyboardEvent("keydown", { key: "v", code: "KeyV", bubbles: true, cancelable: true })
-    document.dispatchEvent(stray)
 
-    if (!stray.defaultPrevented && document.activeElement?.getAttribute("data-component") === "composer-editor") {
-      document.execCommand("insertText", false, "v")
-    }
-  })
-  await expect(editor).not.toBeFocused()
-  await expect(editor).toHaveText("")
-
-  const prevented = await page.evaluate(() => {
     const clipboardData = new DataTransfer()
     clipboardData.setData("text/plain", "pasted ")
     document.body.dispatchEvent(
@@ -97,26 +85,13 @@ test("routes typing to the composer unless the open terminal is focused", async 
         cancelable: true,
       }),
     )
-
-    const trailing = new KeyboardEvent("keydown", { key: "v", code: "KeyV", bubbles: true, cancelable: true })
-    const target = document.activeElement ?? document.body
-    target.dispatchEvent(trailing)
-
-    if (!trailing.defaultPrevented) {
-      document.execCommand("insertText", false, "v")
-    }
-
-    return trailing.defaultPrevented
   })
-
-  expect(prevented).toBe(true)
   await expect(editor).toBeFocused()
   await expect(editor).toHaveText("pasted ")
 
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   })
-  await page.waitForTimeout(120)
   await page.keyboard.type("a")
   await expect(editor).toBeFocused()
   await expect(editor).toHaveText("pasted a")

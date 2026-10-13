@@ -10,6 +10,7 @@ export function consumeTerminalMetaKey(
   event: KeyboardEvent,
   options?: {
     copy?: () => boolean
+    paste?: () => void
   },
 ) {
   if (!event.metaKey || event.ctrlKey || event.altKey) return false
@@ -17,12 +18,12 @@ export function consumeTerminalMetaKey(
   const key = event.key.toLowerCase()
 
   // ghostty-web only exempts physical KeyV from KeyEncoder.encode; on non-QWERTY
-  // layouts where "v" lives on another physical key, let the browser paste fire
-  // without encoding a literal "v" to the PTY.
+  // layouts where "v" lives on another physical key, trigger paste without
+  // falling through to KeyEncoder.encode.
   if (key === "v") {
     if (event.code === "KeyV") return false
 
-    allowBrowserDefault(event)
+    options?.paste?.()
 
     return true
   }
@@ -30,21 +31,10 @@ export function consumeTerminalMetaKey(
   if (!event.shiftKey && key === "c") {
     if (options?.copy?.()) return true
 
-    if (event.code === "KeyC") return false
-
-    allowBrowserDefault(event)
-
-    return true
+    return event.code !== "KeyC"
   }
 
   // ghostty-web passes ASCII `utf8` to KeyEncoder.encode, which ignores Mods.SUPER
   // in standard VT100 mode and emits the raw character to the PTY.
   return event.key.length === 1
-}
-
-function allowBrowserDefault(event: KeyboardEvent) {
-  Object.defineProperty(event, "preventDefault", {
-    value: () => {},
-    configurable: true,
-  })
 }

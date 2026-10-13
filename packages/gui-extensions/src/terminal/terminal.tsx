@@ -484,11 +484,8 @@ export const Terminal = (props: TerminalProps) => {
         if (keybinds.matches("terminal.toggle", event)) return true
 
         return consumeTerminalMetaKey(event, {
-          copy: () => {
-            if (!t.hasSelection()) return false
-
-            return document.execCommand("copy") || t.copySelection()
-          },
+          paste: () => void document.execCommand("paste"),
+          copy: () => t.hasSelection() && (document.execCommand("copy") || t.copySelection()),
         })
       })
 

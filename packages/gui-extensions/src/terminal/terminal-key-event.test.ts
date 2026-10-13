@@ -13,26 +13,23 @@ describe("terminalKeyEvent", () => {
   })
 
   test("consumes printable Command chords without blocking paste or copy across layouts", () => {
-    const qwertyPaste = keyEvent({ key: "v", code: "KeyV", metaKey: true })
-    expect(consumeTerminalMetaKey(qwertyPaste)).toBe(false)
+    let pasted = 0
+    expect(consumeTerminalMetaKey(keyEvent({ key: "v", code: "KeyV", metaKey: true }), { paste: () => void (pasted += 1) })).toBe(
+      false,
+    )
+    expect(pasted).toBe(0)
 
-    const dvorakPaste = keyEvent({ key: "v", code: "Period", metaKey: true })
-    expect(consumeTerminalMetaKey(dvorakPaste)).toBe(true)
-    dvorakPaste.preventDefault()
-    expect(dvorakPaste.defaultPrevented).toBe(false)
+    expect(consumeTerminalMetaKey(keyEvent({ key: "v", code: "Period", metaKey: true }), { paste: () => void (pasted += 1) })).toBe(
+      true,
+    )
+    expect(pasted).toBe(1)
 
-    const dvorakPeriodOnKeyV = keyEvent({ key: ".", code: "KeyV", metaKey: true })
-    expect(consumeTerminalMetaKey(dvorakPeriodOnKeyV)).toBe(true)
-    dvorakPeriodOnKeyV.preventDefault()
-    expect(dvorakPeriodOnKeyV.defaultPrevented).toBe(true)
-
-    const cmdK = keyEvent({ key: "k", code: "KeyK", metaKey: true })
-    expect(consumeTerminalMetaKey(cmdK)).toBe(true)
+    expect(consumeTerminalMetaKey(keyEvent({ key: ".", code: "KeyV", metaKey: true }))).toBe(true)
+    expect(consumeTerminalMetaKey(keyEvent({ key: "k", code: "KeyK", metaKey: true }))).toBe(true)
 
     let copied = 0
-    const dvorakCopyWithSelection = keyEvent({ key: "c", code: "KeyI", metaKey: true })
     expect(
-      consumeTerminalMetaKey(dvorakCopyWithSelection, {
+      consumeTerminalMetaKey(keyEvent({ key: "c", code: "KeyI", metaKey: true }), {
         copy: () => {
           copied += 1
 
@@ -42,12 +39,8 @@ describe("terminalKeyEvent", () => {
     ).toBe(true)
     expect(copied).toBe(1)
 
-    const dvorakCopyWithoutSelection = keyEvent({ key: "c", code: "KeyI", metaKey: true })
-    expect(consumeTerminalMetaKey(dvorakCopyWithoutSelection, { copy: () => false })).toBe(true)
-    dvorakCopyWithoutSelection.preventDefault()
-    expect(dvorakCopyWithoutSelection.defaultPrevented).toBe(false)
-
-    const cmdLeft = keyEvent({ key: "ArrowLeft", code: "ArrowLeft", metaKey: true })
-    expect(consumeTerminalMetaKey(cmdLeft)).toBe(false)
+    expect(consumeTerminalMetaKey(keyEvent({ key: "c", code: "KeyC", metaKey: true }), { copy: () => false })).toBe(false)
+    expect(consumeTerminalMetaKey(keyEvent({ key: "c", code: "KeyI", metaKey: true }), { copy: () => false })).toBe(true)
+    expect(consumeTerminalMetaKey(keyEvent({ key: "ArrowLeft", code: "ArrowLeft", metaKey: true }))).toBe(false)
   })
 })
