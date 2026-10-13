@@ -66,14 +66,19 @@ test("keeps separate one-shot /btw answers and restores them after reload", asyn
   expect(prompts).toEqual([])
 })
 
-test("isolates concurrent side questions and makes an interrupted reload retryable", async ({ page }, testInfo) => {
+test("retries large images in memory and restores interrupted questions after reload", async ({ page }, testInfo) => {
   const held = Promise.withResolvers<void>()
+  const failed = Promise.withResolvers<void>()
   const attempts: string[] = []
   const prompts: unknown[] = []
   const images: string[][] = []
 
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeElEQVR4nO3PUQkAIBTAwBfHiLbXEH4cwmABbnP2+rrhgga0oAEtaEALGtCCBrSgAS1oQAsa0IIGtKABLWhACxrQgga0oAEtaEALGtCCBrSgAS1oQAsa0IIGtKABLWhACxrQgga0oAEtaEALGtCCBrSgAS1oQAseu01Q8Xia6FluAAAAAElFTkSuQmCC"
+
+  // Valid PNG with trailing bytes, large enough that persisting its data URI would exceed localStorage's quota.
+  const buffer = Buffer.concat([Buffer.from(png, "base64"), Buffer.alloc(6 * 1024 * 1024)])
+  const uri = `data:image/png;base64,${buffer.toString("base64")}`
 
   const { editor } = await openSession(page, {
     name: "BtwConcurrent",
@@ -88,6 +93,12 @@ test("isolates concurrent side questions and makes an interrupted reload retryab
       images.push(input.files?.map((file) => file.uri) ?? [])
 
       if (input.prompt.includes("slow question") && attempts.length === 1) {
+        await failed.promise
+
+        throw new Error("Generation failed")
+      }
+
+      if (input.prompt.includes("slow question") && attempts.length === 3) {
         await held.promise
 
         return { text: "Abandoned answer" }
@@ -99,9 +110,7 @@ test("isolates concurrent side questions and makes an interrupted reload retryab
 
   const panel = page.locator('[data-slot="session-btw-panel"]')
   await expect(page.getByRole("button", { name: "Vision", exact: true })).toBeVisible()
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({ name: "diagram.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") })
+  await page.locator('input[type="file"]').setInputFiles({ name: "diagram.png", mimeType: "image/png", buffer })
   await expect(page.getByRole("img", { name: "diagram.png", exact: true })).toBeVisible()
   await editor.fill("/btw slow question")
   await editor.press("Enter")
@@ -114,17 +123,27 @@ test("isolates concurrent side questions and makes an interrupted reload retryab
   await expect(panel.getByRole("status")).toContainText("Working")
   await expect(panel.getByText("Fast answer", { exact: true })).toHaveCount(0)
 
+  failed.resolve()
+  await expect(panel.getByText("Couldn’t answer that question", { exact: true })).toBeVisible()
+  await panel.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(panel.getByRole("status")).toContainText("Working")
+  await expect.poll(() => images.length).toBe(3)
+  expect(images).toEqual([[uri], [], [uri]])
+  expect(await page.evaluate(() => Object.values(localStorage).some((value) => value.includes("data:image/")))).toBe(
+    false,
+  )
+
   await page.reload()
   await expect(panel.getByText("Couldn’t answer that question", { exact: true })).toBeVisible()
   await expect(panel.getByRole("status")).toHaveCount(0)
-  expect(attempts).toHaveLength(2)
+  expect(attempts).toHaveLength(3)
   await panel.getByRole("button", { name: "Retry", exact: true }).click()
   await expect(panel.getByText("Retried answer", { exact: true })).toBeVisible()
-  expect(attempts).toHaveLength(3)
-  expect(images).toEqual([[`data:image/png;base64,${png}`], [], [`data:image/png;base64,${png}`]])
+  expect(attempts).toHaveLength(4)
+  expect(images).toEqual([[uri], [], [uri], []])
   await page.screenshot({ path: testInfo.outputPath("retried-image.png") })
-  expect(attempts[2]).toContain("slow question")
-  expect(attempts[2]).not.toContain("fast question")
+  expect(attempts[3]).toContain("slow question")
+  expect(attempts[3]).not.toContain("fast question")
   held.resolve()
   await page.getByRole("tab", { name: "fast question", exact: true }).click()
   await expect(panel.getByText("Fast answer", { exact: true })).toBeVisible()

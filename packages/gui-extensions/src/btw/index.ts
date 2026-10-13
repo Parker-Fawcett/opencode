@@ -1,5 +1,4 @@
 import { Schema } from "effect"
-import { PromptInput } from "@opencode/schema/prompt-input"
 import { Extension, Store } from "../sdk"
 import en from "./i18n/en"
 
@@ -9,7 +8,6 @@ const Chats = Schema.Struct({
       id: Schema.String,
       question: Schema.String,
       answer: Schema.optional(Schema.String),
-      files: PromptInput.Prompt.fields.files,
     }),
   ),
 })
@@ -17,7 +15,7 @@ const Chats = Schema.Struct({
 export default Extension.define({
   id: "btw",
   stores: {
-    // Each open /btw tab's question, attachments and answer, kept until its tab closes.
+    // Each open /btw tab's question and answer, kept until its tab closes.
     chats: Store.session(Chats, { chats: [] }),
   },
   i18n: { en },

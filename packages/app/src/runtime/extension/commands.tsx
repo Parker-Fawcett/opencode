@@ -35,7 +35,7 @@ export function ExtensionCommands() {
         editable: item.value.editable,
         when: item.value.scope
           ? (event: KeyboardEvent) =>
-              event.target instanceof Element && !!item.value.scope && !!event.target.closest(item.value.scope)
+              event.target instanceof Element && !!event.target.closest(item.value.scope as string)
           : undefined,
         onSelect: (_source, input, files) => item.value.run(input, files),
       })),

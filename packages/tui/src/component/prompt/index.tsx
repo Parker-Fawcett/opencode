@@ -1143,18 +1143,6 @@ export function Prompt(props: PromptProps) {
       if (slash.command.slash?.images) {
         const captured = { ...store.prompt, files: store.prompt.files?.slice() }
         const files = captured.files?.filter((file) => file.uri.startsWith("data:image/")) ?? []
-        try {
-          await slash.command.run(slash.input, undefined, files)
-        } catch {
-          return false
-        }
-        if (
-          disposed ||
-          store.prompt.text !== captured.text ||
-          store.prompt.files?.length !== captured.files?.length ||
-          captured.files?.some((file, index) => store.prompt.files?.[index] !== file)
-        )
-          return true
         clearPrompt()
         setStore("prompt", {
           ...emptyPrompt(),
@@ -1164,6 +1152,33 @@ export function Prompt(props: PromptProps) {
           agents: captured.agents?.map((agent) => ({ ...agent, mention: undefined })),
           skills: captured.skills?.map((skill) => ({ ...skill, mention: undefined })),
         })
+        const remaining = {
+          files: store.prompt.files?.slice(),
+          agents: store.prompt.agents?.slice(),
+          skills: store.prompt.skills?.slice(),
+        }
+        void (async () => {
+          try {
+            await slash.command.run(slash.input, undefined, files)
+          } catch {
+            // Restore only the untouched cleared draft; a follow-up belongs to the user.
+            if (
+              disposed ||
+              input.isDestroyed ||
+              input.plainText !== "" ||
+              (["files", "agents", "skills"] as const).some(
+                (key) =>
+                  store.prompt[key]?.length !== remaining[key]?.length ||
+                  remaining[key]?.some((part, index) => store.prompt[key]?.[index] !== part),
+              )
+            )
+              return
+            input.setText(captured.text)
+            setStore("prompt", captured)
+            restoreExtmarksFromPrompt(captured)
+            input.gotoBufferEnd()
+          }
+        })()
         return true
       }
       clearPrompt()
