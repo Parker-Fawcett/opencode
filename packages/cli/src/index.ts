@@ -17,6 +17,83 @@ import { Npm } from "@opencode/util/npm"
 import { EffectFlock } from "@opencode/util/effect-flock"
 import { Heap } from "./heap"
 import { CpuProfile } from "./cpu-profile"
+import fs from "node:fs"
+import { format } from "node:util"
+
+// Importing @opentui/* leaves stdout and stderr nonblocking: a single write
+// larger than one pipe buffer is silently truncated past 65536 bytes
+// (`--completions fish` is ~68 KiB, so piping it lost the tail). Retry short
+// writes with a bounded wait so CLI output is never truncated.
+// See https://github.com/anomalyco/opencode/issues/55525
+const WRITE_CHUNK = 16 * 1024
+const WRITE_WAIT = new Int32Array(new SharedArrayBuffer(4))
+const WRITE_TIMEOUT_MS = 5_000
+function writeAll(fd: number, buffer: string | Buffer) {
+  const data = typeof buffer === "string" ? Buffer.from(buffer) : buffer
+  const deadline = Date.now() + WRITE_TIMEOUT_MS
+  let offset = 0
+  while (offset < data.length) {
+    let written: number | undefined
+    try {
+      written = fs.writeSync(fd, data, offset, Math.min(WRITE_CHUNK, data.length - offset))
+    } catch (error) {
+      // Anything but a full pipe (EPIPE on a closed pipe, etc.) is not
+      // retryable: stop quietly and let the process exit with its real code.
+      if ((error as NodeJS.ErrnoException)?.code !== "EAGAIN") return
+    }
+    if (written === undefined || written <= 0) {
+      if (Date.now() > deadline) return
+      Atomics.wait(WRITE_WAIT, 0, 0, 1)
+      continue
+    }
+    offset += written
+  }
+}
+for (const [stream, fd] of [
+  [process.stdout, 1],
+  [process.stderr, 2],
+] as const) {
+  const write = stream.write.bind(stream)
+  stream.write = ((chunk: string | Uint8Array, ...args: Array<string | (() => void)>) => {
+    if (typeof chunk !== "string" && !(chunk instanceof Uint8Array))
+      return (write as (...args: Array<unknown>) => boolean)(chunk, ...args)
+    const callback = typeof args[args.length - 1] === "function" ? (args.pop() as () => void) : undefined
+    const encoding = typeof args[0] === "string" ? (args[0] as BufferEncoding) : "utf8"
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk, encoding) : Buffer.from(chunk)
+    if (buffer.length <= WRITE_CHUNK) return (write as (...args: Array<unknown>) => boolean)(chunk, ...args)
+    writeAll(fd, buffer)
+    if (callback) queueMicrotask(callback)
+    return true
+  }) as typeof stream.write
+}
+const defaultConsole = globalThis.console
+
+// Console output does not go through the stream wrappers above under Bun.
+console.log = ((...args: Array<unknown>) => {
+  const text = format(...args) + "\n"
+  if (text.length <= WRITE_CHUNK) return defaultConsole.log(...args)
+  writeAll(1, text)
+}) as typeof defaultConsole.log
+console.info = ((...args: Array<unknown>) => {
+  const text = format(...args) + "\n"
+  if (text.length <= WRITE_CHUNK) return defaultConsole.info(...args)
+  writeAll(1, text)
+}) as typeof defaultConsole.info
+console.debug = ((...args: Array<unknown>) => {
+  const text = format(...args) + "\n"
+  if (text.length <= WRITE_CHUNK) return defaultConsole.debug(...args)
+  writeAll(1, text)
+}) as typeof defaultConsole.debug
+console.warn = ((...args: Array<unknown>) => {
+  const text = format(...args) + "\n"
+  if (text.length <= WRITE_CHUNK) return defaultConsole.warn(...args)
+  writeAll(2, text)
+}) as typeof defaultConsole.warn
+console.error = ((...args: Array<unknown>) => {
+  const text = format(...args) + "\n"
+  if (text.length <= WRITE_CHUNK) return defaultConsole.error(...args)
+  writeAll(2, text)
+}) as typeof defaultConsole.error
 
 ensurePluginRuntime()
 
