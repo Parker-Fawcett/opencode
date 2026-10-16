@@ -275,7 +275,10 @@ it.live("explains npm min-release-age rejections", () =>
       yield* npmFailure(
         "npm error code ETARGET\nnpm error notarget No matching version found for @opencode/cli@2.3.4 with a date before 10/13/2026, 2:51:41 PM.\n",
       ),
-    ).toMatchObject({ title: "npm could not install OpenCode", retry: expect.stringContaining("min-release-age") })
+    ).toMatchObject({
+      title: "npm could not install OpenCode",
+      retry: expect.stringContaining("npm install --global --force @opencode/cli@2.3.4 --min-release-age=0"),
+    })
     expect(yield* npmFailure("registry denied access\n")).toMatchObject({
       retry: "Fix the issue above, then run opencode upgrade again.",
     })

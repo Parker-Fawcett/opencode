@@ -404,7 +404,7 @@ const make = Effect.gen(function* () {
           // npm reports a release published after its `before` or `min-release-age` cutoff as a missing version.
           retry:
             input.method === "npm" && detail.includes("with a date before")
-              ? "This release is newer than your npm before or min-release-age setting allows. Run opencode upgrade again once that setting allows it, or override the setting for this install."
+              ? `This release is newer than your npm before or min-release-age setting allows. Run opencode upgrade again later, or install it now with: ${[...input.command, "--min-release-age=0"].join(" ")}`
               : (input.retry ?? "Fix the issue above, then run opencode upgrade again."),
         },
         cause === undefined ? undefined : { cause },
