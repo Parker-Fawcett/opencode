@@ -272,8 +272,8 @@ describe("Patch", () => {
       chunks: [{ oldLines: ["last"], newLines: ["LAST"] }],
       expected: "\nold\r\nLAST\n",
     },
-  ])("preserves the source line endings for $name", ({ original, chunks, expected }) => {
-    expect(Patch.derive("update.txt", chunks, original)).toEqual({ content: expected, bom: false })
+  ])("preserves the source line endings for $name", (input) => {
+    expect(Patch.derive("update.txt", input.chunks, input.original)).toEqual({ content: input.expected, bom: false })
   })
 
   test("derives multiple update chunks", () => {
