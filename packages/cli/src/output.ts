@@ -1,10 +1,11 @@
 import { Console } from "effect"
 import { format } from "node:util"
 
-// Bun's console drops whatever does not fit once a pipe is full, so `--completions fish` (~68 KiB)
-// stopped at 65536 bytes. Stream writes queue instead, but `process.exit` discards the queue unless
-// the last write has called back. An empty write calls back immediately, so the last real write per
-// stream is kept and awaited.
+// Bun makes a piped stdout nonblocking once `process.stdout` is used, and the TUI preload already leaves
+// it nonblocking at startup. On a nonblocking pipe Bun's console drops whatever does not fit once the
+// pipe is full, so `--completions fish` (~68 KiB) stopped at 65536 bytes. Stream writes queue instead,
+// but `process.exit` discards the queue unless the last write has called back. An empty write calls
+// back immediately, so the last real write per stream is kept and awaited.
 // See https://github.com/anomalyco/opencode/issues/55525
 const pending = { stdout: Promise.resolve(), stderr: Promise.resolve() }
 
