@@ -20,10 +20,11 @@ import { CpuProfile } from "./cpu-profile"
 import fs from "node:fs"
 import { format } from "node:util"
 
-// Importing @opentui/* leaves stdout and stderr nonblocking: a single write
-// larger than one pipe buffer is silently truncated past 65536 bytes
-// (`--completions fish` is ~68 KiB, so piping it lost the tail). Retry short
-// writes with a bounded wait so CLI output is never truncated.
+// `packages/cli/bunfig.toml` loads `@opentui/solid/preload`, which leaves stdout
+// and stderr nonblocking. A single write larger than one pipe buffer is then
+// silently truncated past 65536 bytes (`--completions fish` is ~68 KiB, so
+// its tail was lost when piped). Retrying full pipes in guarded chunks keeps
+// that output from being lost.
 // See https://github.com/anomalyco/opencode/issues/55525
 const WRITE_CHUNK = 16 * 1024
 const WRITE_WAIT = new Int32Array(new SharedArrayBuffer(4))
@@ -37,8 +38,8 @@ function writeAll(fd: number, buffer: string | Buffer) {
     try {
       written = fs.writeSync(fd, data, offset, Math.min(WRITE_CHUNK, data.length - offset))
     } catch (error) {
-      // Anything but a full pipe (EPIPE on a closed pipe, etc.) is not
-      // retryable: stop quietly and let the process exit with its real code.
+      // a closed or broken pipe (EPIPE etc.) is not retryable; only pause on
+      // a temporarily full one (EAGAIN) so the real exit code still wins.
       if ((error as NodeJS.ErrnoException)?.code !== "EAGAIN") return
     }
     if (written === undefined || written <= 0) {
@@ -57,7 +58,9 @@ for (const [stream, fd] of [
   stream.write = ((chunk: string | Uint8Array, ...args: Array<string | (() => void)>) => {
     if (typeof chunk !== "string" && !(chunk instanceof Uint8Array))
       return (write as (...args: Array<unknown>) => boolean)(chunk, ...args)
-    const callback = typeof args[args.length - 1] === "function" ? (args.pop() as () => void) : undefined
+    const lastArg = args.length > 0 ? args[args.length - 1] : undefined
+    const hasCallback = typeof lastArg === "function"
+    const callback = hasCallback ? (lastArg as () => void) : undefined
     const encoding = typeof args[0] === "string" ? (args[0] as BufferEncoding) : "utf8"
     const buffer = typeof chunk === "string" ? Buffer.from(chunk, encoding) : Buffer.from(chunk)
     if (buffer.length <= WRITE_CHUNK) return (write as (...args: Array<unknown>) => boolean)(chunk, ...args)
