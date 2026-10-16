@@ -1248,4 +1248,138 @@ Earlier work
       },
     ])
   })
+  test("aborted streaming tool call lowers to object input with paired error result", () => {
+    const assistant = SessionMessage.Assistant.make({
+      id: id("assistant-interrupted-tool"),
+      type: "assistant",
+      agent: build,
+      model: { id: Model.ID.make("model"), providerID: Provider.ID.make("provider") },
+      content: [
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: "call_interrupted",
+          name: "shell",
+          executed: false,
+          state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: "not-json" }),
+          time: { created },
+        }),
+      ],
+      time: { created },
+      finish: "error",
+      error: { type: "aborted", message: "Step interrupted" },
+    })
+
+    const messages = toLLMMessages([assistant], model)
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool"])
+    expect(messages[0]?.content).toEqual([
+      {
+        type: "tool-call",
+        id: "call_interrupted",
+        name: "shell",
+        input: {},
+        providerExecuted: false,
+        providerMetadata: undefined,
+      },
+    ])
+    expect(messages[1]?.content).toEqual([
+      {
+        type: "tool-result",
+        id: "call_interrupted",
+        name: "shell",
+        result: {
+          type: "error",
+          value: { error: { type: "aborted", message: "Tool execution interrupted" }, content: [] },
+        },
+        providerExecuted: false,
+        cache: undefined,
+        metadata: undefined,
+        providerMetadata: undefined,
+      },
+    ])
+  })
+
+  test("aborted running tool call keeps object input with paired error result", () => {
+    const assistant = SessionMessage.Assistant.make({
+      id: id("assistant-interrupted-running"),
+      type: "assistant",
+      agent: build,
+      model: { id: Model.ID.make("model"), providerID: Provider.ID.make("provider") },
+      content: [
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: "call_running",
+          name: "shell",
+          executed: false,
+          state: SessionMessage.ToolStateRunning.make({ status: "running", input: { command: "pwd" }, metadata: {} }),
+          time: { created },
+        }),
+      ],
+      time: { created },
+      finish: "error",
+      error: { type: "aborted", message: "Tool execution interrupted" },
+    })
+
+    const messages = toLLMMessages([assistant], model)
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool"])
+    expect(messages[0]?.content).toEqual([
+      {
+        type: "tool-call",
+        id: "call_running",
+        name: "shell",
+        input: { command: "pwd" },
+        providerExecuted: false,
+        providerMetadata: undefined,
+      },
+    ])
+    expect(messages[1]?.content).toEqual([
+      {
+        type: "tool-result",
+        id: "call_running",
+        name: "shell",
+        result: {
+          type: "error",
+          value: { error: { type: "aborted", message: "Tool execution interrupted" }, content: [] },
+        },
+        providerExecuted: false,
+        cache: undefined,
+        metadata: undefined,
+        providerMetadata: undefined,
+      },
+    ])
+  })
+
+  test("non-abort error leaves non-terminal tool call without synthesized result", () => {
+    const assistant = SessionMessage.Assistant.make({
+      id: id("assistant-non-abort"),
+      type: "assistant",
+      agent: build,
+      model: { id: Model.ID.make("model"), providerID: Provider.ID.make("provider") },
+      content: [
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: "call_pending",
+          name: "shell",
+          executed: false,
+          state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: "not-json" }),
+          time: { created },
+        }),
+      ],
+      time: { created },
+      finish: "error",
+      error: { type: "unknown", message: "Something else failed" },
+    })
+
+    const messages = toLLMMessages([assistant], model)
+    expect(messages.map((message) => message.role)).toEqual(["assistant"])
+    expect(messages[0]?.content).toEqual([
+      {
+        type: "tool-call",
+        id: "call_pending",
+        name: "shell",
+        input: {},
+        providerExecuted: false,
+        providerMetadata: undefined,
+      },
+    ])
+  })
 })
