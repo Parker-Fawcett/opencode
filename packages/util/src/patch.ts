@@ -133,8 +133,8 @@ export function derive(path: string, chunks: ReadonlyArray<UpdateFileChunk>, ori
   if (lines.at(-1) === "") lines.pop()
   const replacements = computeReplacements(lines, path, chunks)
   for (const [start, remove, insert] of replacements.reverse()) lines.splice(start, remove, ...insert)
-  // CRLF splitting leaves real blank lines as empty strings; they still need a terminator.
-  if (newline === "\r\n" || lines.at(-1) !== "") lines.push("")
+  // Terminate every line, including a trailing blank one.
+  lines.push("")
   const next = Bom.split(lines.join(newline))
   return { content: next.text, bom: source.bom || next.bom }
 }

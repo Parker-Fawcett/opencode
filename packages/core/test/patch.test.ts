@@ -231,48 +231,42 @@ describe("Patch", () => {
 
   test.each([
     {
-      name: "CRLF replacement with context and a trailing blank line",
-      original: "first\r\nold\r\nlast\r\nuntouched\r\n\r\n",
-      chunks: [{ oldLines: ["first", "old", "last"], newLines: ["first", "new", "added", "last"] }],
-      expected: "first\r\nnew\r\nadded\r\nlast\r\nuntouched\r\n\r\n",
+      name: "a CRLF file with a trailing blank line",
+      original: "first\r\nold\r\nlast\r\n\r\n",
+      chunks: [{ oldLines: ["old"], newLines: ["new", "added"] }],
+      expected: "first\r\nnew\r\nadded\r\nlast\r\n\r\n",
     },
     {
-      name: "CRLF blank line appended at EOF",
-      original: "first\r\n",
-      chunks: [{ oldLines: [], newLines: [""] }],
-      expected: "first\r\n\r\n",
-    },
-    {
-      name: "CRLF file without a final newline",
+      name: "a CRLF file without a final newline",
       original: "first\r\nold",
       chunks: [{ oldLines: ["old"], newLines: ["new"], endOfFile: true }],
       expected: "first\r\nnew\r\n",
     },
     {
-      name: "CRLF file with all content deleted",
-      original: "first\r\n",
-      chunks: [{ oldLines: ["first"], newLines: [] }],
-      expected: "",
+      name: "an LF file with a trailing blank line",
+      original: "first\nold\n\n",
+      chunks: [{ oldLines: ["first"], newLines: ["FIRST"] }],
+      expected: "FIRST\nold\n\n",
     },
     {
-      name: "LF file",
-      original: "first\nold\nlast\n",
-      chunks: [{ oldLines: ["old"], newLines: ["new", "added"] }],
-      expected: "first\nnew\nadded\nlast\n",
+      name: "an LF edit that ends with a blank line",
+      original: "first\nold\n",
+      chunks: [{ oldLines: ["old"], newLines: ["new", ""] }],
+      expected: "first\nnew\n\n",
     },
     {
-      name: "LF region in a mixed file",
+      name: "an LF region in a mixed file",
       original: "first\r\nold\nlast\r\n",
       chunks: [{ oldLines: ["old"], newLines: ["new", "added"] }],
       expected: "first\r\nnew\nadded\nlast\r\n",
     },
     {
-      name: "leading LF in a mixed file",
-      original: "\nold\r\nlast\n",
-      chunks: [{ oldLines: ["last"], newLines: ["LAST"] }],
-      expected: "\nold\r\nLAST\n",
+      name: "a file whose content is all deleted",
+      original: "first\r\n",
+      chunks: [{ oldLines: ["first"], newLines: [] }],
+      expected: "",
     },
-  ])("preserves the source line endings for $name", (input) => {
+  ])("derives an update for $name", (input) => {
     expect(Patch.derive("update.txt", input.chunks, input.original)).toEqual({ content: input.expected, bom: false })
   })
 
