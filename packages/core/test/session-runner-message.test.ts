@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { Message, Media } from "@opencode/ai"
+import { LLM, Message, Media } from "@opencode/ai"
+import * as AnthropicMessages from "@opencode/ai/protocols/anthropic-messages"
+import * as Anthropic from "@opencode/ai/providers/anthropic"
+import { Effect } from "effect"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
 import { SessionMessage } from "@opencode/core/session/message"
@@ -1247,5 +1250,53 @@ Earlier work
         providerMetadata: { provider: { phase: "commentary" } },
       },
     ])
+  })
+  const streamingToolAssistant = (input: string, messageID: string) =>
+    SessionMessage.Assistant.make({
+      id: id(messageID),
+      type: "assistant",
+      agent: build,
+      model: { id: Model.ID.make("claude-opus-4-5"), providerID: Provider.ID.make("anthropic") },
+      content: [
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: "call_streaming",
+          name: "shell",
+          executed: false,
+          state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input }),
+          time: { created },
+        }),
+      ],
+      time: { created },
+    })
+
+  test("streaming tool input that is not JSON lowers to an empty object", () => {
+    const messages = toLLMMessages([streamingToolAssistant("not-json", "assistant-bad-json")], model)
+    expect((messages[0]?.content as ReadonlyArray<{ input: unknown }>)[0]?.input).toEqual({})
+  })
+
+  test("streaming tool input that is a JSON object is preserved", () => {
+    const messages = toLLMMessages([streamingToolAssistant('{"command":"pwd"}', "assistant-good-json")], model)
+    expect((messages[0]?.content as ReadonlyArray<{ input: unknown }>)[0]?.input).toEqual({ command: "pwd" })
+  })
+
+  test("every lowered tool_use input is an object for the Anthropic body", async () => {
+    const anthropic = Anthropic.configure({ apiKey: "fixture" }).model("claude-opus-4-5")
+    const body = await Effect.runPromise(
+      Effect.map(
+        AnthropicMessages.protocol.body.from(
+          LLM.request({
+            id: "tool-input-coercion",
+            model: anthropic,
+            messages: toLLMMessages([streamingToolAssistant("not-json", "assistant-wire")], model),
+          }),
+        ),
+        (value) => value as { messages: ReadonlyArray<{ content: ReadonlyArray<{ type: string; input?: unknown }> }> },
+      ),
+    )
+    const toolUse = body.messages.flatMap((entry) => entry.content).find((block) => block.type === "tool_use")
+    expect(toolUse).toBeDefined()
+    expect(typeof toolUse?.input).toBe("object")
+    expect(toolUse?.input).not.toBeNull()
   })
 })

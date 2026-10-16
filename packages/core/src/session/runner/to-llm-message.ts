@@ -108,9 +108,18 @@ const providerMetadata = (
   state: Record<string, unknown> | undefined,
 ): ProviderMetadata | undefined => (state === undefined ? undefined : { [provider]: state })
 
+// The provider `tool_use.input` must be a JSON object. `streaming` state holds the raw
+// argument text, so unparseable input falls back to an empty record rather than a string.
 const toolInput = (tool: SessionMessage.AssistantTool) =>
   tool.state.status === "streaming"
-    ? Option.getOrElse(decodeToolInput(tool.state.input), () => tool.state.input)
+    ? Option.getOrElse(
+        Option.filter(
+          decodeToolInput(tool.state.input),
+          (value): value is Record<string, unknown> =>
+            typeof value === "object" && value !== null && !Array.isArray(value),
+        ),
+        () => ({}),
+      )
     : tool.state.input
 
 const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined): ContentPart =>
