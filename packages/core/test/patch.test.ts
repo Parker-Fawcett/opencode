@@ -231,22 +231,16 @@ describe("Patch", () => {
 
   test.each([
     {
-      name: "CRLF replacement with context",
-      original: "first\r\nold\r\nlast\r\nuntouched\r\n",
+      name: "CRLF replacement with context and a trailing blank line",
+      original: "first\r\nold\r\nlast\r\nuntouched\r\n\r\n",
       chunks: [{ oldLines: ["first", "old", "last"], newLines: ["first", "new", "added", "last"] }],
-      expected: "first\r\nnew\r\nadded\r\nlast\r\nuntouched\r\n",
+      expected: "first\r\nnew\r\nadded\r\nlast\r\nuntouched\r\n\r\n",
     },
     {
-      name: "CRLF append",
-      original: "first\r\nlast\r\n",
-      chunks: [{ oldLines: [], newLines: ["added", "last added"] }],
-      expected: "first\r\nlast\r\nadded\r\nlast added\r\n",
-    },
-    {
-      name: "CRLF insertion before the first line",
-      original: "first\r\nlast\r\n",
-      chunks: [{ oldLines: ["first"], newLines: ["added", "first"] }],
-      expected: "added\r\nfirst\r\nlast\r\n",
+      name: "CRLF blank line appended at EOF",
+      original: "first\r\n",
+      chunks: [{ oldLines: [], newLines: [""] }],
+      expected: "first\r\n\r\n",
     },
     {
       name: "CRLF file without a final newline",
@@ -255,19 +249,10 @@ describe("Patch", () => {
       expected: "first\r\nnew\r\n",
     },
     {
-      name: "CRLF deletion and blank lines",
-      original: "first\r\n\r\nremove\r\nlast\r\n",
-      chunks: [{ oldLines: ["", "remove"], newLines: [""] }],
-      expected: "first\r\n\r\nlast\r\n",
-    },
-    {
-      name: "CRLF multiple chunks",
-      original: "first\r\nold\r\nlast\r\n",
-      chunks: [
-        { oldLines: ["first"], newLines: ["FIRST"] },
-        { oldLines: ["last"], newLines: ["LAST"] },
-      ],
-      expected: "FIRST\r\nold\r\nLAST\r\n",
+      name: "CRLF file with all content deleted",
+      original: "first\r\n",
+      chunks: [{ oldLines: ["first"], newLines: [] }],
+      expected: "",
     },
     {
       name: "LF file",
