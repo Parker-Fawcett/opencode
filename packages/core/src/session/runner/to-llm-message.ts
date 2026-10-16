@@ -110,7 +110,14 @@ const providerMetadata = (
 
 const toolInput = (tool: SessionMessage.AssistantTool) =>
   tool.state.status === "streaming"
-    ? Option.getOrElse(decodeToolInput(tool.state.input), () => tool.state.input)
+    ? Option.getOrElse(
+        Option.filter(
+          decodeToolInput(tool.state.input),
+          (value): value is Record<string, unknown> =>
+            typeof value === "object" && value !== null && !Array.isArray(value),
+        ),
+        () => ({}),
+      )
     : tool.state.input
 
 const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined): ContentPart =>
@@ -122,7 +129,11 @@ const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: Provider
     providerMetadata,
   })
 
-const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined) => {
+const toolResult = (
+  tool: SessionMessage.AssistantTool,
+  providerMetadata: ProviderMetadata | undefined,
+  interrupted = false,
+) => {
   if (tool.state.status === "completed") {
     // TODO: Materialize remote and managed URIs before provider-history lowering.
     const content = tool.state.content
@@ -148,6 +159,19 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
       providerMetadata,
     })
   }
+  if ((tool.state.status === "streaming" || tool.state.status === "running") && interrupted) {
+    // An interrupted or resumed call must never enter provider history as a
+    // dangling tool_use. Synthesize the same terminal shape before translation.
+    return ToolResultPart.make({
+      id: tool.id,
+      name: tool.name,
+      result: { error: { type: "aborted", message: "Tool execution interrupted" }, content: [] },
+      resultType: "error",
+      providerExecuted: tool.executed,
+      providerMetadata,
+    })
+  }
+  if (tool.state.status === "streaming" || tool.state.status === "running") return undefined
 }
 
 const assistant = (message: SessionMessage.Assistant, model: Model.Ref, providerMetadataKey: string) => {
@@ -157,6 +181,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
   const reasoningInterrupted = message.content.some(
     (item) => item.type === "reasoning" && item.time !== undefined && item.time.completed === undefined,
   )
+  const interrupted = message.error?.type === "aborted"
   const content = message.content.flatMap((item): ContentPart[] => {
     if (item.type === "text")
       return [
@@ -205,6 +230,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
         : sameProvider && item.providerResultState !== undefined
           ? providerMetadata(providerMetadataKey, item.providerResultState)
           : undefined,
+      interrupted,
     )
     return result ? [call, result] : [call]
   })
@@ -221,6 +247,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
         reuseProviderMetadata
           ? providerMetadata(providerMetadataKey, item.providerResultState ?? item.providerState)
           : undefined,
+        interrupted,
       ),
     )
     .filter((message) => message !== undefined)
