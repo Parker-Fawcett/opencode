@@ -1382,4 +1382,37 @@ Earlier work
       },
     ])
   })
+  test("streaming tool input that is not a JSON object lowers to {}", () => {
+    const assistant = SessionMessage.Assistant.make({
+      id: id("assistant-invalid-streaming-input"),
+      type: "assistant",
+      agent: build,
+      model: { id: Model.ID.make("model"), providerID: Provider.ID.make("provider") },
+      content: [
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: "call_invalid",
+          name: "shell",
+          executed: false,
+          state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: "not-json" }),
+          time: { created },
+        }),
+      ],
+      time: { created },
+      finish: "error",
+      error: { type: "aborted", message: "Tool execution interrupted" },
+    })
+    const messages = toLLMMessages([assistant], model)
+    expect(messages[0]?.content).toEqual([
+      {
+        type: "tool-call",
+        id: "call_invalid",
+        name: "shell",
+        input: {},
+        providerExecuted: false,
+        providerMetadata: undefined,
+      },
+    ])
+  })
+
 })
