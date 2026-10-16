@@ -401,7 +401,11 @@ const make = Effect.gen(function* () {
           title: input.title ?? `${installNames[input.method]} could not install OpenCode`,
           detail,
           command: (input.displayCommand ?? input.command).join(" "),
-          retry: input.retry ?? "Fix the issue above, then run opencode upgrade again.",
+          // npm reports a release published after its `before` or `min-release-age` cutoff as a missing version.
+          retry:
+            input.method === "npm" && detail.includes("with a date before")
+              ? "This release is newer than your npm before or min-release-age setting allows. Run opencode upgrade again once that setting allows it, or override the setting for this install."
+              : (input.retry ?? "Fix the issue above, then run opencode upgrade again."),
         },
         cause === undefined ? undefined : { cause },
       )
