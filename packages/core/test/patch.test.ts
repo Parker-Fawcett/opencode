@@ -229,6 +229,68 @@ describe("Patch", () => {
     expect(Patch.joinBom(update.content, update.bom)).toBe("\uFEFFnew\n")
   })
 
+  test.each([
+    {
+      name: "CRLF replacement with context",
+      original: "first\r\nold\r\nlast\r\nuntouched\r\n",
+      chunks: [{ oldLines: ["first", "old", "last"], newLines: ["first", "new", "added", "last"] }],
+      expected: "first\r\nnew\r\nadded\r\nlast\r\nuntouched\r\n",
+    },
+    {
+      name: "CRLF append",
+      original: "first\r\nlast\r\n",
+      chunks: [{ oldLines: [], newLines: ["added", "last added"] }],
+      expected: "first\r\nlast\r\nadded\r\nlast added\r\n",
+    },
+    {
+      name: "CRLF insertion before the first line",
+      original: "first\r\nlast\r\n",
+      chunks: [{ oldLines: ["first"], newLines: ["added", "first"] }],
+      expected: "added\r\nfirst\r\nlast\r\n",
+    },
+    {
+      name: "CRLF file without a final newline",
+      original: "first\r\nold",
+      chunks: [{ oldLines: ["old"], newLines: ["new"], endOfFile: true }],
+      expected: "first\r\nnew\r\n",
+    },
+    {
+      name: "CRLF deletion and blank lines",
+      original: "first\r\n\r\nremove\r\nlast\r\n",
+      chunks: [{ oldLines: ["", "remove"], newLines: [""] }],
+      expected: "first\r\n\r\nlast\r\n",
+    },
+    {
+      name: "CRLF multiple chunks",
+      original: "first\r\nold\r\nlast\r\n",
+      chunks: [
+        { oldLines: ["first"], newLines: ["FIRST"] },
+        { oldLines: ["last"], newLines: ["LAST"] },
+      ],
+      expected: "FIRST\r\nold\r\nLAST\r\n",
+    },
+    {
+      name: "LF file",
+      original: "first\nold\nlast\n",
+      chunks: [{ oldLines: ["old"], newLines: ["new", "added"] }],
+      expected: "first\nnew\nadded\nlast\n",
+    },
+    {
+      name: "LF region in a mixed file",
+      original: "first\r\nold\nlast\r\n",
+      chunks: [{ oldLines: ["old"], newLines: ["new", "added"] }],
+      expected: "first\r\nnew\nadded\nlast\r\n",
+    },
+    {
+      name: "leading LF in a mixed file",
+      original: "\nold\r\nlast\n",
+      chunks: [{ oldLines: ["last"], newLines: ["LAST"] }],
+      expected: "\nold\r\nLAST\n",
+    },
+  ])("preserves the source line endings for $name", ({ original, chunks, expected }) => {
+    expect(Patch.derive("update.txt", chunks, original)).toEqual({ content: expected, bom: false })
+  })
+
   test("derives multiple update chunks", () => {
     expect(
       Patch.derive(
