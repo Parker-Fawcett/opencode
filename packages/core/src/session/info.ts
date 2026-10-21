@@ -1,5 +1,4 @@
 import { DateTime, Schema } from "effect"
-import { Agent } from "@opencode/schema/agent"
 import { Location } from "@opencode/schema/location"
 import { Model } from "@opencode/schema/model"
 import { Project } from "@opencode/schema/project"
@@ -26,7 +25,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
             boundary: row.fork_boundary,
           }
         : undefined,
-    agent: row.agent ? Agent.ID.make(row.agent) : undefined,
+    agent: row.agent ?? undefined,
     model: row.model
       ? {
           id: Model.ID.make(row.model.id),
@@ -58,7 +57,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
       updated: DateTime.makeUnsafe(row.time_updated),
       idle: row.time_idle === null ? undefined : DateTime.makeUnsafe(row.time_idle),
       viewed: row.time_viewed === null ? undefined : DateTime.makeUnsafe(row.time_viewed),
-      archived: row.time_archived ? DateTime.makeUnsafe(row.time_archived) : undefined,
+      archived: row.time_archived === null ? undefined : DateTime.makeUnsafe(row.time_archived),
     },
   })
 }
